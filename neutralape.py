@@ -36,14 +36,22 @@ def calcular_senal(df):
     df['upper'] = df['ma'] + 2 * df['std']
     df['lower'] = df['ma'] - 2 * df['std']
 
-    precio_actual = df['close'].iloc[-1]
-    upper = df['upper'].iloc[-1]
-    lower = df['lower'].iloc[-1]
+    # Detectar cruce hacia arriba de la banda superior (longCond en Pine Script)
+    if len(df) < 2:
+        return 'neutral'
+    close_prev = df['close'].iloc[-2]
+    close_now = df['close'].iloc[-1]
+    upper_prev = df['upper'].iloc[-2]
+    upper_now = df['upper'].iloc[-1]
+    lower_prev = df['lower'].iloc[-2]
+    lower_now = df['lower'].iloc[-1]
 
-    if precio_actual > upper:
-        return 'short'
-    elif precio_actual < lower:
+    # Cruce hacia arriba de la banda superior (long)
+    if close_prev <= upper_prev and close_now > upper_now:
         return 'long'
+    # Cruce hacia abajo de la banda inferior (short)
+    elif close_prev >= lower_prev and close_now < lower_now:
+        return 'short'
     else:
         return 'neutral'
 
