@@ -132,6 +132,21 @@ def calcular_atr(df, periodo=14):
     df['atr'] = df['tr'].rolling(window=periodo).mean()
     return df['atr'].iloc[-1]
 
+def obtener_precisiones(symbol):
+    info = client.futures_exchange_info()
+    cantidad_decimales = 3
+    precio_decimales = 3
+    for s in info['symbols']:
+        if s['symbol'] == symbol:
+            for f in s['filters']:
+                if f['filterType'] == 'LOT_SIZE':
+                    step_size = float(f['stepSize'])
+                    cantidad_decimales = abs(int(np.log10(step_size)))
+                if f['filterType'] == 'PRICE_FILTER':
+                    tick_size = float(f['tickSize'])
+                    precio_decimales = abs(int(np.log10(tick_size)))
+    return cantidad_decimales, precio_decimales
+
 # ============ LOOP PRINCIPAL ============
 while True:
     df = obtener_datos(symbol, intervalo)
@@ -177,18 +192,24 @@ while True:
         saldo_usdt = next((float(b['balance']) for b in balance if b['asset'] == 'USDT'), 0)
         riesgo_pct = 0.01  # 1% de riesgo por operación
 
-        # Calcula distancia SL en precio
+        # Calcula distancia SL en precio (más amplio)
         precio_actual = float(df['close'].iloc[-1])
         if senal == 'long':
-            sl = precio_actual - atr
-            tp = precio_actual + atr * 1.5
-            distancia_sl = atr
+            sl = precio_actual - atr * 1.5
+            tp = precio_actual + atr * 2
+            distancia_sl = atr * 1.5
         else:
-            sl = precio_actual + atr
-            tp = precio_actual - atr * 1.5
-            distancia_sl = atr
+            sl = precio_actual + atr * 1.5
+            tp = precio_actual - atr * 2
+            distancia_sl = atr * 1.5
 
+        # Redondeo de precios y cantidad según precisión del símbolo
+        cantidad_decimales, precio_decimales = obtener_precisiones(symbol)
         cantidad = calcular_cantidad_riesgo(saldo_usdt, riesgo_pct, distancia_sl, precio_actual)
+        cantidad = round(cantidad, cantidad_decimales)
+        sl = round(sl, precio_decimales)
+        tp = round(tp, precio_decimales)
+
         print(f"💰 Saldo disponible: {saldo_usdt} USDT | Usando {cantidad} contratos para la operación ({riesgo_pct*100:.1f}% de riesgo, SL={sl:.4f}, TP={tp:.4f})")
 
         precio_entrada, cantidad_real = ejecutar_orden(senal, symbol, cantidad)
