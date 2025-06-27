@@ -6,12 +6,13 @@ from binance.enums import *
 from datetime import datetime
 import csv
 import os
+import requests
 
 # ======== CONFIGURACIÓN ========
 api_key = 'Lw3sQdyAZcEJ2s522igX6E28ZL629ZL5JJ9UaqLyM7PXeNRLDu30LmPYFNJ4ixAx'
 api_secret = 'Adw4DXL2BI9oS4sCJlS3dlBeoJQo6iPezmykfL1bhhm0NQe7aTHpaWULLQ0dYOIt'
 symbol = 'APEUSDT'
-intervalo = '5m'
+intervalo = '15m'
 cantidad_usdt = 6  # Capital por operación
 take_profit_pct = 0.015  # 1.5%
 stop_loss_pct = 0.005   # 0.5%
@@ -19,6 +20,17 @@ stop_loss_pct = 0.005   # 0.5%
 
 client = Client(api_key, api_secret)
 client.API_URL = 'https://fapi.binance.com/fapi'  # FUTUROS
+
+TELEGRAM_TOKEN = '7528040250:AAGJTghR6TV9PgpGkCaFzXN_1mO0yaqMO34'
+TELEGRAM_CHAT_ID = '1715798949'
+
+def enviar_telegram(mensaje):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    data = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje}
+    try:
+        requests.post(url, data=data)
+    except Exception as e:
+        print(f"❌ Error enviando notificación Telegram: {e}")
 
 def obtener_datos(symbol, intervalo, limite=100):
     klines = client.futures_klines(symbol=symbol, interval=intervalo, limit=limite)
@@ -166,6 +178,7 @@ while True:
 
     senal = calcular_senal(df)
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Señal detectada: {senal.upper()}")
+    enviar_telegram(f"Señal detectada: {senal.upper()} en {symbol} ({intervalo})")
 
     info_pos = client.futures_position_information(symbol=symbol)
     if not info_pos:
@@ -178,6 +191,17 @@ while True:
             print(f"Posición actual: cantidad={posicion['positionAmt']}, precio entrada={posicion['entryPrice']}, PnL={posicion['unRealizedProfit']}")
         else:
             print("Sin posición abierta.")
+
+    # Cancelar órdenes TP/SL pendientes si no hay posición abierta
+    if pos_abierta == 0:
+        ordenes_abiertas = client.futures_get_open_orders(symbol=symbol)
+        for orden in ordenes_abiertas:
+            if orden['type'] in ['STOP_MARKET', 'TAKE_PROFIT_MARKET']:
+                try:
+                    client.futures_cancel_order(symbol=symbol, orderId=orden['orderId'])
+                    print(f"🗑️ Orden pendiente cancelada: {orden['type']}")
+                except Exception as e:
+                    print(f"❌ Error al cancelar orden pendiente: {e}")
 
     # Evitar duplicar posiciones en la misma dirección
     if (senal == 'long' and pos_abierta > 0) or (senal == 'short' and pos_abierta < 0):
@@ -281,6 +305,7 @@ while True:
             )
             print(f"✅ Orden {senal.upper()} ejecutada correctamente.")
             print(f"🎯 Take Profit: {tp:.4f} | 🛑 Stop Loss: {sl:.4f}")
+            enviar_telegram(f"✅ Orden {senal.upper()} ejecutada a {precio_entrada}.\nTP: {tp} | SL: {sl}")
         else:
             print(f"❌ No se pudo ejecutar la orden {senal.upper()}.")
 
