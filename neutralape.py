@@ -47,9 +47,9 @@ def calcular_senal(df):
     df['std'] = df['close'].rolling(window=20).std()
     df['upper'] = df['ma'] + 2 * df['std']
     df['lower'] = df['ma'] - 2 * df['std']
+    df['ma50'] = df['close'].rolling(window=50).mean()  # MA50 para filtro de tendencia
 
-    # Detectar cruce hacia arriba de la banda superior (longCond en Pine Script)
-    if len(df) < 2:
+    if len(df) < 51:
         return 'neutral'
     close_prev = df['close'].iloc[-2]
     close_now = df['close'].iloc[-1]
@@ -57,12 +57,13 @@ def calcular_senal(df):
     upper_now = df['upper'].iloc[-1]
     lower_prev = df['lower'].iloc[-2]
     lower_now = df['lower'].iloc[-1]
+    ma50_now = df['ma50'].iloc[-1]
 
-    # Cruce hacia arriba de la banda superior (long)
-    if close_prev <= upper_prev and close_now > upper_now:
+    # Señal long: cruce arriba banda superior y precio sobre MA50
+    if close_prev <= upper_prev and close_now > upper_now and close_now > ma50_now:
         return 'long'
-    # Cruce hacia abajo de la banda inferior (short)
-    elif close_prev >= lower_prev and close_now < lower_now:
+    # Señal short: cruce abajo banda inferior y precio bajo MA50
+    elif close_prev >= lower_prev and close_now < lower_now and close_now < ma50_now:
         return 'short'
     else:
         return 'neutral'
@@ -178,7 +179,7 @@ while True:
 
     senal = calcular_senal(df)
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Señal detectada: {senal.upper()}")
-    enviar_telegram(f"Señal detectada: {senal.upper()} en {symbol} ({intervalo})")
+    # enviar_telegram(f"Señal detectada: {senal.upper()} en {symbol} ({intervalo})")  # <--- Comenta o elimina esta línea
 
     info_pos = client.futures_position_information(symbol=symbol)
     if not info_pos:
@@ -222,7 +223,7 @@ while True:
         # Gestión de riesgo avanzada
         balance = client.futures_account_balance()
         saldo_usdt = next((float(b['balance']) for b in balance if b['asset'] == 'USDT'), 0)
-        riesgo_pct = 0.01  # 1% de riesgo por operación
+        riesgo_pct = 0.03  # 3% de riesgo por operación
 
         # Calcula distancia SL en precio (más amplio)
         precio_actual = float(df['close'].iloc[-1])
