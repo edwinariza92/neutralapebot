@@ -13,9 +13,8 @@ api_key = 'Lw3sQdyAZcEJ2s522igX6E28ZL629ZL5JJ9UaqLyM7PXeNRLDu30LmPYFNJ4ixAx'
 api_secret = 'Adw4DXL2BI9oS4sCJlS3dlBeoJQo6iPezmykfL1bhhm0NQe7aTHpaWULLQ0dYOIt'
 symbol = 'APEUSDT'
 intervalo = '15m'
-cantidad_usdt = 6  # Capital por operación
-take_profit_pct = 0.015  # 1.5%
-stop_loss_pct = 0.005   # 0.5%
+riesgo_pct = 0.03  # 3% de riesgo por operación
+umbral_volatilidad = 0.02  # ATR máximo permitido para operar
 # ===============================
 
 client = Client(api_key, api_secret)
@@ -68,40 +67,15 @@ def calcular_senal(df):
     else:
         return 'neutral'
 
-def calcular_cantidad(symbol, usdt_amount):
-    precio = float(client.futures_symbol_ticker(symbol=symbol)['price'])
-    info = client.futures_exchange_info()
-    step_size = 0.01
-    for s in info['symbols']:
-        if s['symbol'] == symbol:
-            for f in s['filters']:
-                if f['filterType'] == 'LOT_SIZE':
-                    step_size = float(f['stepSize'])
-    cantidad = usdt_amount / precio
-    precision = int(round(-np.log10(step_size)))
-    return round(cantidad, precision)
-
-def calcular_cantidad_riesgo(saldo_usdt, riesgo_pct, distancia_sl, precio):
+def calcular_cantidad_riesgo(saldo_usdt, riesgo_pct, distancia_sl):
     riesgo_usdt = saldo_usdt * riesgo_pct
     if distancia_sl == 0:
         return 0
     cantidad = riesgo_usdt / distancia_sl
     return round(cantidad, 3)
 
-def ejecutar_orden(senal, symbol, usdt_amount):
+def ejecutar_orden(senal, symbol, cantidad):
     try:
-        cantidad = calcular_cantidad(symbol, usdt_amount)
-        if cantidad == 0:
-            print("❌ La cantidad calculada es 0. No se ejecuta la orden.")
-            return None, None
-
-        # Verifica saldo disponible (opcional, solo si quieres mayor seguridad)
-        # balance = client.futures_account_balance()
-        # saldo_usdt = next((float(b['balance']) for b in balance if b['asset'] == 'USDT'), 0)
-        # if saldo_usdt < usdt_amount:
-        #     print(f"❌ Saldo insuficiente: tienes {saldo_usdt} USDT, necesitas {usdt_amount} USDT.")
-        #     return None, None
-
         side = SIDE_BUY if senal == 'long' else SIDE_SELL
         try:
             orden = client.futures_create_order(
@@ -137,22 +111,6 @@ def registrar_operacion(fecha, tipo, precio_entrada, cantidad, tp, sl):
             writer.writerow(['Fecha', 'Tipo', 'Precio Entrada', 'Cantidad', 'Take Profit', 'Stop Loss'])
         writer.writerow([fecha, tipo, precio_entrada, cantidad, tp, sl])
 
-def obtener_capital_operacion(porcentaje=0.05):
-    balance = client.futures_account_balance()
-    saldo_usdt = next((float(b['balance']) for b in balance if b['asset'] == 'USDT'), 0)
-    capital = max(round(saldo_usdt * porcentaje, 2), 5)  # Nunca menos de 5 USDT
-    print(f"💰 Saldo disponible: {saldo_usdt} USDT | Usando {capital} USDT para la operación ({int(porcentaje*100)}%)")
-    return capital
-
-def calcular_atr(df, periodo=14):
-    df['high'] = df['high'].astype(float)
-    df['low'] = df['low'].astype(float)
-    df['close'] = df['close'].astype(float)
-    df['tr'] = df[['high', 'low', 'close']].apply(
-        lambda row: max(row['high'] - row['low'], abs(row['high'] - row['close']), abs(row['low'] - row['close'])), axis=1)
-    df['atr'] = df['tr'].rolling(window=periodo).mean()
-    return df['atr'].iloc[-1]
-
 def obtener_precisiones(symbol):
     info = client.futures_exchange_info()
     cantidad_decimales = 3
@@ -168,18 +126,26 @@ def obtener_precisiones(symbol):
                     precio_decimales = abs(int(np.log10(tick_size)))
     return cantidad_decimales, precio_decimales
 
+def calcular_atr(df, periodo=14):
+    df['high'] = df['high'].astype(float)
+    df['low'] = df['low'].astype(float)
+    df['close'] = df['close'].astype(float)
+    df['tr'] = df[['high', 'low', 'close']].apply(
+        lambda row: max(row['high'] - row['low'], abs(row['high'] - row['close']), abs(row['low'] - row['close'])), axis=1)
+    df['atr'] = df['tr'].rolling(window=periodo).mean()
+    return df['atr'].iloc[-1]
+
 # ============ LOOP PRINCIPAL ============
 while True:
     df = obtener_datos(symbol, intervalo)
 
-    if len(df) < 20:
+    if len(df) < 51:
         print("⏳ Esperando más datos...")
         time.sleep(60)
         continue
 
     senal = calcular_senal(df)
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Señal detectada: {senal.upper()}")
-    # enviar_telegram(f"Señal detectada: {senal.upper()} en {symbol} ({intervalo})")  # <--- Comenta o elimina esta línea
 
     info_pos = client.futures_position_information(symbol=symbol)
     if not info_pos:
@@ -213,8 +179,6 @@ while True:
     # === Gestión dinámica y avanzada ===
     if senal in ['long', 'short'] and pos_abierta == 0:
         atr = calcular_atr(df)
-        umbral_volatilidad = 0.02  # Ajusta este valor según tu experiencia
-
         if atr > umbral_volatilidad:
             print("Mercado demasiado volátil, no se opera.")
             time.sleep(60)
@@ -223,22 +187,21 @@ while True:
         # Gestión de riesgo avanzada
         balance = client.futures_account_balance()
         saldo_usdt = next((float(b['balance']) for b in balance if b['asset'] == 'USDT'), 0)
-        riesgo_pct = 0.03  # 3% de riesgo por operación
 
-        # Calcula distancia SL en precio (más amplio)
+        # Calcula distancia SL en precio (ajustable)
         precio_actual = float(df['close'].iloc[-1])
         if senal == 'long':
-            sl = precio_actual - atr * 1.5
+            sl = precio_actual - atr * 1.2
             tp = precio_actual + atr * 2
-            distancia_sl = atr * 1.5
+            distancia_sl = atr * 1.2
         else:
-            sl = precio_actual + atr * 1.5
+            sl = precio_actual + atr * 1.2
             tp = precio_actual - atr * 2
-            distancia_sl = atr * 1.5
+            distancia_sl = atr * 1.2
 
         # Redondeo de precios y cantidad según precisión del símbolo
         cantidad_decimales, precio_decimales = obtener_precisiones(symbol)
-        cantidad = calcular_cantidad_riesgo(saldo_usdt, riesgo_pct, distancia_sl, precio_actual)
+        cantidad = calcular_cantidad_riesgo(saldo_usdt, riesgo_pct, distancia_sl)
         cantidad = round(cantidad, cantidad_decimales)
         sl = round(sl, precio_decimales)
         tp = round(tp, precio_decimales)
