@@ -102,14 +102,14 @@ def ejecutar_orden(senal, symbol, cantidad):
         print(f"❌ Error inesperado al ejecutar operación: {e}")
         return None, None
 
-def registrar_operacion(fecha, tipo, precio_entrada, cantidad, tp, sl):
+def registrar_operacion(fecha, tipo, precio_entrada, cantidad, tp, sl, resultado=None):
     archivo = 'registro_operaciones.csv'
     existe = os.path.isfile(archivo)
     with open(archivo, mode='a', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         if not existe:
-            writer.writerow(['Fecha', 'Tipo', 'Precio Entrada', 'Cantidad', 'Take Profit', 'Stop Loss'])
-        writer.writerow([fecha, tipo, precio_entrada, cantidad, tp, sl])
+            writer.writerow(['Fecha', 'Tipo', 'Precio Entrada', 'Cantidad', 'Take Profit', 'Stop Loss', 'Resultado'])
+        writer.writerow([fecha, tipo, precio_entrada, cantidad, tp, sl, resultado if resultado else ""])
 
 def obtener_precisiones(symbol):
     info = client.futures_exchange_info()
