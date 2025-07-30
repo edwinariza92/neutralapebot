@@ -13,7 +13,7 @@ api_key = 'Lw3sQdyAZcEJ2s522igX6E28ZL629ZL5JJ9UaqLyM7PXeNRLDu30LmPYFNJ4ixAx'
 api_secret = 'Adw4DXL2BI9oS4sCJlS3dlBeoJQo6iPezmykfL1bhhm0NQe7aTHpaWULLQ0dYOIt'
 symbol = 'APEUSDT'
 intervalo = '15m'
-riesgo_pct = 0.01  # 3% de riesgo por operación
+riesgo_pct = 0.03  # 3% de riesgo por operación
 umbral_volatilidad = 0.02  # ATR máximo permitido para operar
 # ===============================
 
@@ -46,26 +46,23 @@ def calcular_senal(df):
     df['std'] = df['close'].rolling(window=20).std()
     df['upper'] = df['ma'] + 2 * df['std']
     df['lower'] = df['ma'] - 2 * df['std']
-    df['ma50'] = df['close'].rolling(window=50).mean()  # MA50 para filtro de tendencia
-
-    if len(df) < 51:
+    df['ma200'] = df['close'].rolling(window=200).mean()  # filtro tendencia
+    
+    if len(df) < 205:
         return 'neutral'
-    close_prev = df['close'].iloc[-2]
-    close_now = df['close'].iloc[-1]
-    upper_prev = df['upper'].iloc[-2]
-    upper_now = df['upper'].iloc[-1]
-    lower_prev = df['lower'].iloc[-2]
-    lower_now = df['lower'].iloc[-1]
-    ma50_now = df['ma50'].iloc[-1]
+    
+    # Señal retrasada 4 velas para long
+    close_prev = df['close'].iloc[-6]
+    close_now = df['close'].iloc[-5]
+    upper_prev = df['upper'].iloc[-6]
+    upper_now = df['upper'].iloc[-5]
+    ma200_now = df['ma200'].iloc[-5]
 
-    # Señal long: cruce arriba banda superior y precio sobre MA50
-    if close_prev <= upper_prev and close_now > upper_now and close_now > ma50_now:
+    if close_prev <= upper_prev and close_now > upper_now and close_now > ma200_now:
         return 'long'
-    # Señal short: cruce abajo banda inferior y precio bajo MA50
-    elif close_prev >= lower_prev and close_now < lower_now and close_now < ma50_now:
-        return 'short'
     else:
         return 'neutral'
+
 
 def calcular_cantidad_riesgo(saldo_usdt, riesgo_pct, distancia_sl):
     riesgo_usdt = saldo_usdt * riesgo_pct
@@ -103,7 +100,7 @@ def ejecutar_orden(senal, symbol, cantidad):
         return None, None
 
 def registrar_operacion(fecha, tipo, precio_entrada, cantidad, tp, sl, resultado=None, pnl=None):
-    archivo = 'registro_operaciones_ape_4h.csv'
+    archivo = 'registro_operaciones_ape_15m.csv'
     existe = os.path.isfile(archivo)
     with open(archivo, mode='a', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
@@ -219,9 +216,10 @@ while True:
         # Calcula distancia SL en precio (ajustable)
         precio_actual = float(df['close'].iloc[-1])
         if senal == 'long':
-            sl = precio_actual - atr * 1.2
-            tp = precio_actual + atr * 2
-            distancia_sl = atr * 1.2
+            sl = precio_actual - atr * 0.5
+            tp = precio_actual + atr * 2.5
+            distancia_sl = atr * 0.5
+
         else:
             sl = precio_actual + atr * 1.2
             tp = precio_actual - atr * 2
@@ -295,7 +293,7 @@ while True:
             except Exception as e:
                 print(f"❌ Error al crear TP/SL: {e}")
 
-            print(f"✅ Orden {senal.upper()} ejecutada correctamente.")
+            print(f"✅ Orden {senal.upper()} ejecutada correctamente en temporalidad de 15 minutos.")
             print(f"🎯 Take Profit: {tp:.4f} | 🛑 Stop Loss: {sl:.4f}")
             enviar_telegram(f"✅ Orden {senal.upper()} ejecutada a {precio_entrada}.\nTP: {tp} | SL: {sl}")
         else:

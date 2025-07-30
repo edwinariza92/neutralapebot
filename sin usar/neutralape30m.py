@@ -6,30 +6,19 @@ from binance.enums import *
 from datetime import datetime
 import csv
 import os
-import requests
 
 # ======== CONFIGURACIÓN ========
 api_key = 'Lw3sQdyAZcEJ2s522igX6E28ZL629ZL5JJ9UaqLyM7PXeNRLDu30LmPYFNJ4ixAx'
 api_secret = 'Adw4DXL2BI9oS4sCJlS3dlBeoJQo6iPezmykfL1bhhm0NQe7aTHpaWULLQ0dYOIt'
 symbol = 'APEUSDT'
-intervalo = '15m'
-riesgo_pct = 0.01  # 3% de riesgo por operación
-umbral_volatilidad = 0.02  # ATR máximo permitido para operar
+intervalo = '30m'
+cantidad_usdt = 6  # Capital por operación
+take_profit_pct = 0.015  # 1.5%
+stop_loss_pct = 0.005   # 0.5%
 # ===============================
 
 client = Client(api_key, api_secret)
 client.API_URL = 'https://fapi.binance.com/fapi'  # FUTUROS
-
-TELEGRAM_TOKEN = '7528040250:AAGJTghR6TV9PgpGkCaFzXN_1mO0yaqMO34'
-TELEGRAM_CHAT_ID = '1715798949'
-
-def enviar_telegram(mensaje):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje}
-    try:
-        requests.post(url, data=data)
-    except Exception as e:
-        print(f"❌ Error enviando notificación Telegram: {e}")
 
 def obtener_datos(symbol, intervalo, limite=100):
     klines = client.futures_klines(symbol=symbol, interval=intervalo, limit=limite)
@@ -46,36 +35,52 @@ def calcular_senal(df):
     df['std'] = df['close'].rolling(window=20).std()
     df['upper'] = df['ma'] + 2 * df['std']
     df['lower'] = df['ma'] - 2 * df['std']
-    df['ma50'] = df['close'].rolling(window=50).mean()  # MA50 para filtro de tendencia
 
-    if len(df) < 51:
-        return 'neutral'
-    close_prev = df['close'].iloc[-2]
-    close_now = df['close'].iloc[-1]
-    upper_prev = df['upper'].iloc[-2]
-    upper_now = df['upper'].iloc[-1]
-    lower_prev = df['lower'].iloc[-2]
-    lower_now = df['lower'].iloc[-1]
-    ma50_now = df['ma50'].iloc[-1]
+    precio_actual = df['close'].iloc[-1]
+    upper = df['upper'].iloc[-1]
+    lower = df['lower'].iloc[-1]
 
-    # Señal long: cruce arriba banda superior y precio sobre MA50
-    if close_prev <= upper_prev and close_now > upper_now and close_now > ma50_now:
-        return 'long'
-    # Señal short: cruce abajo banda inferior y precio bajo MA50
-    elif close_prev >= lower_prev and close_now < lower_now and close_now < ma50_now:
+    if precio_actual > upper:
         return 'short'
+    elif precio_actual < lower:
+        return 'long'
     else:
         return 'neutral'
 
-def calcular_cantidad_riesgo(saldo_usdt, riesgo_pct, distancia_sl):
+def calcular_cantidad(symbol, usdt_amount):
+    precio = float(client.futures_symbol_ticker(symbol=symbol)['price'])
+    info = client.futures_exchange_info()
+    step_size = 0.01
+    for s in info['symbols']:
+        if s['symbol'] == symbol:
+            for f in s['filters']:
+                if f['filterType'] == 'LOT_SIZE':
+                    step_size = float(f['stepSize'])
+    cantidad = usdt_amount / precio
+    precision = int(round(-np.log10(step_size)))
+    return round(cantidad, precision)
+
+def calcular_cantidad_riesgo(saldo_usdt, riesgo_pct, distancia_sl, precio):
     riesgo_usdt = saldo_usdt * riesgo_pct
     if distancia_sl == 0:
         return 0
     cantidad = riesgo_usdt / distancia_sl
     return round(cantidad, 3)
 
-def ejecutar_orden(senal, symbol, cantidad):
+def ejecutar_orden(senal, symbol, usdt_amount):
     try:
+        cantidad = calcular_cantidad(symbol, usdt_amount)
+        if cantidad == 0:
+            print("❌ La cantidad calculada es 0. No se ejecuta la orden.")
+            return None, None
+
+        # Verifica saldo disponible (opcional, solo si quieres mayor seguridad)
+        # balance = client.futures_account_balance()
+        # saldo_usdt = next((float(b['balance']) for b in balance if b['asset'] == 'USDT'), 0)
+        # if saldo_usdt < usdt_amount:
+        #     print(f"❌ Saldo insuficiente: tienes {saldo_usdt} USDT, necesitas {usdt_amount} USDT.")
+        #     return None, None
+
         side = SIDE_BUY if senal == 'long' else SIDE_SELL
         try:
             orden = client.futures_create_order(
@@ -102,14 +107,30 @@ def ejecutar_orden(senal, symbol, cantidad):
         print(f"❌ Error inesperado al ejecutar operación: {e}")
         return None, None
 
-def registrar_operacion(fecha, tipo, precio_entrada, cantidad, tp, sl, resultado=None, pnl=None):
-    archivo = 'registro_operaciones_ape_4h.csv'
+def registrar_operacion(fecha, tipo, precio_entrada, cantidad, tp, sl):
+    archivo = 'registro_operaciones2.csv'
     existe = os.path.isfile(archivo)
     with open(archivo, mode='a', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         if not existe:
-            writer.writerow(['Fecha', 'Tipo', 'Precio Entrada', 'Cantidad', 'Take Profit', 'Stop Loss', 'Resultado', 'PnL'])
-        writer.writerow([fecha, tipo, precio_entrada, cantidad, tp, sl, resultado if resultado else "", pnl if pnl is not None else ""])
+            writer.writerow(['Fecha', 'Tipo', 'Precio Entrada', 'Cantidad', 'Take Profit', 'Stop Loss'])
+        writer.writerow([fecha, tipo, precio_entrada, cantidad, tp, sl])
+
+def obtener_capital_operacion(porcentaje=0.05):
+    balance = client.futures_account_balance()
+    saldo_usdt = next((float(b['balance']) for b in balance if b['asset'] == 'USDT'), 0)
+    capital = max(round(saldo_usdt * porcentaje, 2), 5)  # Nunca menos de 5 USDT
+    print(f"💰 Saldo disponible: {saldo_usdt} USDT | Usando {capital} USDT para la operación ({int(porcentaje*100)}%)")
+    return capital
+
+def calcular_atr(df, periodo=14):
+    df['high'] = df['high'].astype(float)
+    df['low'] = df['low'].astype(float)
+    df['close'] = df['close'].astype(float)
+    df['tr'] = df[['high', 'low', 'close']].apply(
+        lambda row: max(row['high'] - row['low'], abs(row['high'] - row['close']), abs(row['low'] - row['close'])), axis=1)
+    df['atr'] = df['tr'].rolling(window=periodo).mean()
+    return df['atr'].iloc[-1]
 
 def obtener_precisiones(symbol):
     info = client.futures_exchange_info()
@@ -126,48 +147,11 @@ def obtener_precisiones(symbol):
                     precio_decimales = abs(int(np.log10(tick_size)))
     return cantidad_decimales, precio_decimales
 
-def calcular_atr(df, periodo=14):
-    df['high'] = df['high'].astype(float)
-    df['low'] = df['low'].astype(float)
-    df['close'] = df['close'].astype(float)
-    df['tr'] = df[['high', 'low', 'close']].apply(
-        lambda row: max(row['high'] - row['low'], abs(row['high'] - row['close']), abs(row['low'] - row['close'])), axis=1)
-    df['atr'] = df['tr'].rolling(window=periodo).mean()
-    return df['atr'].iloc[-1]
-
-def notificar_pnl(symbol):
-    trades = client.futures_account_trades(symbol=symbol)
-    if trades:
-        ultimo_trade = trades[-1]
-        pnl = float(ultimo_trade.get('realizedPnl', 0))
-        return pnl
-    else:
-        enviar_telegram(f"🔔 Posición cerrada en {symbol}. No se pudo obtener el PnL.")
-        return 0
-
-def detectar_resultado_cierre(symbol, precio_entrada, tp, sl):
-    trades = client.futures_account_trades(symbol=symbol)
-    if not trades:
-        return ""
-    # Busca el último trade de cierre (reduceOnly=True)
-    for trade in reversed(trades):
-        if trade.get('reduceOnly', False):
-            precio_ejecucion = float(trade['price'])
-            # Compara el precio de ejecución con TP y SL
-            if abs(precio_ejecucion - tp) < abs(precio_ejecucion - sl):
-                return "TP"
-            else:
-                return "SL"
-    return ""
-
 # ============ LOOP PRINCIPAL ============
-ultima_posicion_cerrada = True
-datos_ultima_operacion = {}
-
 while True:
     df = obtener_datos(symbol, intervalo)
 
-    if len(df) < 51:
+    if len(df) < 20:
         print("⏳ Esperando más datos...")
         time.sleep(60)
         continue
@@ -187,17 +171,6 @@ while True:
         else:
             print("Sin posición abierta.")
 
-    # Cancelar órdenes TP/SL pendientes si no hay posición abierta
-    if pos_abierta == 0:
-        ordenes_abiertas = client.futures_get_open_orders(symbol=symbol)
-        for orden in ordenes_abiertas:
-            if orden['type'] in ['STOP_MARKET', 'TAKE_PROFIT_MARKET']:
-                try:
-                    client.futures_cancel_order(symbol=symbol, orderId=orden['orderId'])
-                    print(f"🗑️ Orden pendiente cancelada: {orden['type']}")
-                except Exception as e:
-                    print(f"❌ Error al cancelar orden pendiente: {e}")
-
     # Evitar duplicar posiciones en la misma dirección
     if (senal == 'long' and pos_abierta > 0) or (senal == 'short' and pos_abierta < 0):
         print("⚠️ Ya hay una posición abierta en la misma dirección. No se ejecuta nueva orden.")
@@ -207,6 +180,8 @@ while True:
     # === Gestión dinámica y avanzada ===
     if senal in ['long', 'short'] and pos_abierta == 0:
         atr = calcular_atr(df)
+        umbral_volatilidad = 0.02  # Ajusta este valor según tu experiencia
+
         if atr > umbral_volatilidad:
             print("Mercado demasiado volátil, no se opera.")
             time.sleep(60)
@@ -215,21 +190,22 @@ while True:
         # Gestión de riesgo avanzada
         balance = client.futures_account_balance()
         saldo_usdt = next((float(b['balance']) for b in balance if b['asset'] == 'USDT'), 0)
+        riesgo_pct = 0.01  # 1% de riesgo por operación
 
-        # Calcula distancia SL en precio (ajustable)
+        # Calcula distancia SL en precio (más amplio)
         precio_actual = float(df['close'].iloc[-1])
         if senal == 'long':
-            sl = precio_actual - atr * 1.2
+            sl = precio_actual - atr * 1.5
             tp = precio_actual + atr * 2
-            distancia_sl = atr * 1.2
+            distancia_sl = atr * 1.5
         else:
-            sl = precio_actual + atr * 1.2
+            sl = precio_actual + atr * 1.5
             tp = precio_actual - atr * 2
-            distancia_sl = atr * 1.2
+            distancia_sl = atr * 1.5
 
         # Redondeo de precios y cantidad según precisión del símbolo
         cantidad_decimales, precio_decimales = obtener_precisiones(symbol)
-        cantidad = calcular_cantidad_riesgo(saldo_usdt, riesgo_pct, distancia_sl)
+        cantidad = calcular_cantidad_riesgo(saldo_usdt, riesgo_pct, distancia_sl, precio_actual)
         cantidad = round(cantidad, cantidad_decimales)
         sl = round(sl, precio_decimales)
         tp = round(tp, precio_decimales)
@@ -239,14 +215,6 @@ while True:
         precio_entrada, cantidad_real = ejecutar_orden(senal, symbol, cantidad)
 
         if precio_entrada:
-            ultima_posicion_cerrada = False
-            datos_ultima_operacion = {
-                "senal": senal,
-                "precio_entrada": precio_entrada,
-                "cantidad_real": cantidad_real,
-                "tp": tp,
-                "sl": sl
-            }
             # Cancelar órdenes TP/SL abiertas antes de crear nuevas
             ordenes_abiertas = client.futures_get_open_orders(symbol=symbol)
             for orden in ordenes_abiertas:
@@ -295,43 +263,17 @@ while True:
             except Exception as e:
                 print(f"❌ Error al crear TP/SL: {e}")
 
+            registrar_operacion(
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                senal,
+                precio_entrada,
+                cantidad_real,
+                tp,
+                sl
+            )
             print(f"✅ Orden {senal.upper()} ejecutada correctamente.")
             print(f"🎯 Take Profit: {tp:.4f} | 🛑 Stop Loss: {sl:.4f}")
-            enviar_telegram(f"✅ Orden {senal.upper()} ejecutada a {precio_entrada}.\nTP: {tp} | SL: {sl}")
         else:
             print(f"❌ No se pudo ejecutar la orden {senal.upper()}.")
-
-    if pos_abierta == 0 and not ultima_posicion_cerrada and datos_ultima_operacion:
-        trades = client.futures_account_trades(symbol=symbol)
-        if trades:
-            ultimo_trade = trades[-1]
-            pnl = float(ultimo_trade.get('realizedPnl', 0))
-            # Detecta si fue TP o SL
-            precio_ejecucion = float(ultimo_trade['price'])
-            tp = datos_ultima_operacion["tp"]
-            sl = datos_ultima_operacion["sl"]
-            if abs(precio_ejecucion - tp) < abs(precio_ejecucion - sl):
-                resultado = "TP"
-                enviar_telegram(f"🎉 ¡Take Profit alcanzado en {symbol}! Ganancia: {pnl:.4f} USDT")
-            else:
-                resultado = "SL"
-                enviar_telegram(f"⚠️ Stop Loss alcanzado en {symbol}. Pérdida: {pnl:.4f} USDT")
-        else:
-            resultado = ""
-            pnl = None
-            enviar_telegram(f"🔔 Posición cerrada en {symbol}. No se pudo obtener el PnL.")
-
-        registrar_operacion(
-            datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            datos_ultima_operacion["senal"],
-            datos_ultima_operacion["precio_entrada"],
-            datos_ultima_operacion["cantidad_real"],
-            datos_ultima_operacion["tp"],
-            datos_ultima_operacion["sl"],
-            resultado=resultado,
-            pnl=pnl
-        )
-        ultima_posicion_cerrada = True
-        datos_ultima_operacion = {}
 
     time.sleep(60)  # Esperar antes de la siguiente verificación

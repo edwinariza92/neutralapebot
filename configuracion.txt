@@ -1,0 +1,12 @@
+# ======== CONFIGURACIÓN ========
+api_key = 'Lw3sQdyAZcEJ2s522igX6E28ZL629ZL5JJ9UaqLyM7PXeNRLDu30LmPYFNJ4ixAx'
+api_secret = 'Adw4DXL2BI9oS4sCJlS3dlBeoJQo6iPezmykfL1bhhm0NQe7aTHpaWULLQ0dYOIt'
+symbol = 'APEUSDT'
+intervalo = '5m'
+cantidad_usdt = 6  # Capital por operación
+take_profit_pct = 0.05  # 5%
+stop_loss_pct = 0.03   # 3%
+# ===============================
+telegram runeusdt
+TELEGRAM_TOKEN = '7893613179:AAFBhtbmAOJasCexddEHlqhhHOGe9EAVWQM'
+TELEGRAM_CHAT_ID = '1715798949'
