@@ -208,8 +208,8 @@ def obtener_datos(symbol, intervalo, limite=100):
 
 def calcular_senal(df, umbral_volatilidad=0.02):
     # Bandas de Bollinger y ATR
-    df['ma'] = df['close'].rolling(window=20).mean()
-    df['std'] = df['close'].rolling(window=20).std()
+    df['ma'] = df['close'].rolling(window=21).mean()
+    df['std'] = df['close'].rolling(window=21).std()
     df['upper'] = df['ma'] + 2 * df['std']
     df['lower'] = df['ma'] - 2 * df['std']
     
@@ -219,9 +219,9 @@ def calcular_senal(df, umbral_volatilidad=0.02):
     df['tr2'] = abs(df['high'] - df['prev_close'])
     df['tr3'] = abs(df['low'] - df['prev_close'])
     df['tr'] = df[['tr1', 'tr2', 'tr3']].max(axis=1)
-    df['atr'] = df['tr'].rolling(window=14).mean()
+    df['atr'] = df['tr'].rolling(window=15).mean()
     
-    if len(df) < 21:
+    if len(df) < 22:
         return 'neutral'
     
     close_now = df['close'].iloc[-1]
@@ -302,7 +302,7 @@ def obtener_precisiones(symbol):
                     precio_decimales = abs(int(np.log10(tick_size)))
     return cantidad_decimales, precio_decimales
 
-def calcular_atr(df, periodo=14):
+def calcular_atr(df, periodo=15):
     """Calcula el ATR usando la fórmula estándar (True Range)"""
     df['high'] = df['high'].astype(float)
     df['low'] = df['low'].astype(float)
@@ -348,7 +348,7 @@ def ejecutar_bot_trading():
         try:
             df = obtener_datos(symbol, intervalo)
 
-            if len(df) < 51:
+            if len(df) < 52:
                 log_consola("⏳ Esperando más datos...")
                 time.sleep(60)
                 continue
