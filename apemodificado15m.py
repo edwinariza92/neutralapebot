@@ -18,11 +18,16 @@ api_key = 'Lw3sQdyAZcEJ2s522igX6E28ZL629ZL5JJ9UaqLyM7PXeNRLDu30LmPYFNJ4ixAx'
 api_secret = 'Adw4DXL2BI9oS4sCJlS3dlBeoJQo6iPezmykfL1bhhm0NQe7aTHpaWULLQ0dYOIt'
 symbol = 'APEUSDT'
 intervalo = '15m'
-riesgo_pct = 0.03  # 3% de riesgo por operación
-umbral_volatilidad = 0.02  # ATR máximo permitido para operar
-# Multiplicadores TP/SL adaptados de Pine Script NeutralAPE
-tp_multiplier = 4.1  # Take Profit multiplicador
-sl_multiplier = 1.8  # Stop Loss multiplicador
+riesgo_pct = 0.03
+umbral_volatilidad = 0.02
+tp_multiplier = 4.1
+sl_multiplier = 1.8
+
+# Parámetros de Pine Script NeutralAPE Adaptado
+bb_length = 21  # Periodo de las Bandas de Bollinger
+bb_mult = 2.0   # Desviación estándar para las Bandas de Bollinger
+atr_length = 16  # Periodo del ATR
+ma_trend_length = 50  # Periodo de la media móvil de tendencia
 # ===============================
 
 client = Client(api_key, api_secret)
