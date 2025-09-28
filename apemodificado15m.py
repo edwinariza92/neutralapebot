@@ -16,16 +16,16 @@ import json
 # ======== CONFIGURACIÓN ========
 api_key = 'Lw3sQdyAZcEJ2s522igX6E28ZL629ZL5JJ9UaqLyM7PXeNRLDu30LmPYFNJ4ixAx'
 api_secret = 'Adw4DXL2BI9oS4sCJlS3dlBeoJQo6iPezmykfL1bhhm0NQe7aTHpaWULLQ0dYOIt'
-symbol = 'MERLUSDT'
-intervalo = '15m'
+symbol = 'SUNUSDT'
+intervalo = '1h'
 riesgo_pct = 0.01  # 1% de riesgo por operación
 umbral_volatilidad = 0.02  # ATR máximo permitido para operar
-bb_length = 20  # Periodo por defecto para Bandas de Bollinger
-bb_mult = 2.4  # Multiplicador por defecto para Bandas de Bollinger
-atr_length = 16  # Periodo por defecto para ATR
+bb_length = 21  # Periodo por defecto para Bandas de Bollinger
+bb_mult = 3.3  # Multiplicador por defecto para Bandas de Bollinger
+atr_length = 13  # Periodo por defecto para ATR
 ma_trend_length = 50  # Periodo por defecto para MA de tendencia
-tp_multiplier = 4.1  # Multiplicador por defecto para Take Profit
-sl_multiplier = 1.8  # Multiplicador por defecto para Stop Loss
+tp_multiplier = 2.7  # Multiplicador por defecto para Take Profit
+sl_multiplier = 1.5  # Multiplicador por defecto para Stop Loss
 # ===============================
 
 client = Client(api_key, api_secret)
@@ -515,22 +515,34 @@ def ejecutar_bot_trading():
                     perdidas_consecutivas = 0
 
                 if perdidas_consecutivas >= 3:
+                    # Registrar la última operación ANTES de detener el bot
+                    registrar_operacion(
+                        datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        datos_ultima_operacion["senal"],
+                        datos_ultima_operacion["precio_entrada"],
+                        datos_ultima_operacion["cantidad_real"],
+                        datos_ultima_operacion["tp"],
+                        datos_ultima_operacion["sl"],
+                        resultado=resultado,
+                        pnl=pnl,
+                        symbol=symbol
+                    )
                     enviar_telegram(f"⚠️ Bot {symbol} detenido tras 3 pérdidas consecutivas. Revisión sugerida")
                     log_consola(f"⚠️ Bot {symbol} detenido tras 3 pérdidas consecutivas.")
                     bot_activo = False
                     break
-
-                registrar_operacion(
-                    datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    datos_ultima_operacion["senal"],
-                    datos_ultima_operacion["precio_entrada"],
-                    datos_ultima_operacion["cantidad_real"],
-                    datos_ultima_operacion["tp"],
-                    datos_ultima_operacion["sl"],
-                    resultado=resultado,
-                    pnl=pnl,
-                    symbol=symbol
-                )
+                else:
+                    registrar_operacion(
+                        datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        datos_ultima_operacion["senal"],
+                        datos_ultima_operacion["precio_entrada"],
+                        datos_ultima_operacion["cantidad_real"],
+                        datos_ultima_operacion["tp"],
+                        datos_ultima_operacion["sl"],
+                        resultado=resultado,
+                        pnl=pnl,
+                        symbol=symbol
+                    )
                 ultima_posicion_cerrada = True
                 datos_ultima_operacion = {}
                 hubo_posicion_abierta = False
