@@ -1,12 +1,12 @@
 [Unit]
-Description=Trading Bot Universal
+Description=Trading Bot ape
 After=network.target
 
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/home/ubuntu/bots/bot3/neutralspebot
-ExecStart=/usr/bin/python3 /home/ubuntu/bots/bot3/neutralspebot/apemodificado15m.py
+WorkingDirectory=/home/ubuntu/bots/bot3/neutralapebot
+ExecStart=/usr/bin/python3 /home/ubuntu/bots/bot3/neutralapebot/apemodificado15m.py
 Restart=on-failure
 RestartSec=30
 StandardOutput=journal
