@@ -1,0 +1,19 @@
+[Unit]
+Description=Trading Bot Universal
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/bots/bot3/neutralspebot
+ExecStart=/usr/bin/python3 /home/ubuntu/bots/bot3/neutralspebot/apemodificado15m.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+# Agregar límites de recursos para prevenir cuelgues por memoria
+MemoryLimit=512M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target
